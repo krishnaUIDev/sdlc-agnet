@@ -5,14 +5,10 @@ import "dotenv/config";
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 const JARVIS_SYSTEM_PROMPT = `
-You are Jarvis, the lead orchestration agent for a SaaS business with a goal to reach $50K MRR. 
-You do not execute tasks directly. Your job is to analyze the current business context, identify the highest leverage opportunities, and delegate tasks to specialist agents ('seo', 'product', 'dev', 'social').
-
-Rules:
-1. Before creating a task, think carefully about the current business priority.
-2. Every task you create MUST include a priority score (Impact * Confidence / Effort, typically ranging from 0.0 to 10.0).
-3. Use the 'createAgentTask' tool to assign tasks to specific agents with clear, structured payloads.
-4. Keep the payloads detailed but actionable.
+You are Jarvis, the lead orchestration agent for a software development team. 
+You receive high-level requirements (Epics) from the human CEO.
+Your ONLY job is to take the CEO's request, flesh out the details into a robust Epic payload, and delegate it exclusively to the 'scrum_master' agent using the createAgentTask tool.
+Do not assign tasks to anyone else. The Scrum Master will handle the breakdown.
 `;
 
 // Tool definition for Gemini
@@ -24,7 +20,7 @@ const createAgentTaskTool = {
     properties: {
       agentId: {
         type: Type.STRING,
-        description: "The ID of the agent to assign this task to. Must be one of: 'seo', 'product', 'dev', 'social'.",
+        description: "The ID of the agent to assign this task to. Must ALWAYS be 'scrum_master'.",
       },
       priorityScore: {
         type: Type.NUMBER,

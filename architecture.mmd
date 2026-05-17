@@ -7,10 +7,13 @@ graph TD
     classDef worker fill:#1c5e46,stroke:#24785a,color:#fff,rx:8px,ry:8px;
     classDef review fill:#8c3a26,stroke:#a3442d,color:#fff,rx:8px,ry:8px;
     classDef devops fill:#7e3e98,stroke:#5c2d70,color:#fff,rx:8px,ry:8px;
+    classDef monitor fill:#a32a2a,stroke:#c43333,color:#fff,rx:8px,ry:8px;
 
     User["User / Human<br/>Sets Goal"]:::human
     
-    DB[("Supabase Database<br/>The 'Blackboard'<br/>All Agents read/write here")]:::db
+    DB[("Supabase DB + Realtime (Pub/Sub)<br/>State: PENDING → ASSIGNED → IN_PROGRESS → COMPLETED/REJECTED")]:::db
+
+    Watcher["SLA / Timeout Monitor<br/>Flags stuck tasks"]:::monitor
 
     Jarvis["Jarvis — Manager Agent"]:::manager
     ScrumMaster["Scrum Master Agent"]:::scrum
@@ -21,33 +24,49 @@ graph TD
     Security["Security Agent"]:::worker
     QA["QA / Testing Agent"]:::worker
 
+    HelpAgent["Help / Resolution Agent<br/>(Unblocks stuck agents)"]:::manager
     Review["Review Agent<br/>(Quality Gate)"]:::review
     DevOps["DevOps Agent"]:::devops
     Finished["Deployed Application"]:::human
+    Rollback["Previous Version<br/>(Rollback Target)"]:::human
 
-    %% Communication Flow: Everything goes through the DB
+    %% Communication Flow: Event Bus / Pub/Sub
     User -->|1. Creates Epic| DB
+    DB -.->|Pub/Sub Event| Watcher
     
-    DB -.->|2. Polls for Epics| Jarvis
-    Jarvis -->|3. Updates Epic Status| DB
+    DB -.->|Event: New Epic| Jarvis
+    Jarvis -->|Updates Epic Status| DB
     
-    DB -.->|4. Polls for Epic breakdown| ScrumMaster
-    ScrumMaster -->|5. Creates Sub-tasks| DB
+    DB -.->|Event: Epic Breakdown| ScrumMaster
+    ScrumMaster -->|Creates Sub-tasks| DB
 
-    DB -.->|6. Polls for Assignments| UX
-    DB -.->|6. Polls for Assignments| Dev
-    DB -.->|6. Polls for Assignments| SEO
-    DB -.->|6. Polls for Assignments| Security
-    DB -.->|6. Polls for Assignments| QA
+    %% Task Execution & Pub/Sub Assignment
+    DB -.->|Event: Task PENDING| UX
+    DB -.->|Event: Task PENDING| Dev
+    DB -.->|Event: Task PENDING| SEO
+    DB -.->|Event: Task PENDING| Security
+    DB -.->|Event: Task PENDING| QA
 
-    UX -->|7. Submits Work| DB
-    Dev -->|7. Submits Work| DB
-    SEO -->|7. Submits Work| DB
-    Security -->|7. Submits Work| DB
-    QA -->|7. Submits Work| DB
+    %% Dependencies
+    Dev -.->|Waits for| UX
+    QA -.->|Waits for| Dev
+    Security -.->|Waits for| Dev
+    Review -.->|Waits for| QA & Security & SEO
 
-    DB -.->|8. Polls for Completed Work| Review
-    Review -->|"9. Approves (or Rejects back to DB)"| DB
+    UX -->|Submits Work| DB
+    Dev -->|Submits Work| DB
+    SEO -->|Submits Work| DB
+    Security -->|Submits Work| DB
+    QA -->|Submits Work| DB
 
-    DB -.->|10. Polls for Approved Code| DevOps
-    DevOps -->|11. Merges & Deploys| Finished
+    DB -.->|Event: NEEDS_HELP| HelpAgent
+    HelpAgent -->|Provides Answer, resets to PENDING| DB
+
+    DB -.->|Event: Tasks COMPLETED| Review
+    Review -->|"Approves"| DB
+    Review -->|"REJECTS (Sets status REJECTED)"| DB
+    DB -.->|Event: REJECTED (Reassigns)| Dev
+
+    DB -.->|Event: APPROVED| DevOps
+    DevOps -->|"Merges & Deploys"| Finished
+    DevOps -.->|"Fails Deployment"| Rollback

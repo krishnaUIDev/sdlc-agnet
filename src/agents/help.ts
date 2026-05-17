@@ -1,0 +1,55 @@
+import { GoogleGenAI } from '@google/genai';
+import { supabase } from '../utils/supabase';
+import "dotenv/config";
+
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
+const HELP_PROMPT = `
+You are the Resolution Agent (Product Manager). 
+One of your worker agents (UX, Dev, QA, etc.) is stuck and has asked a question because they lack requirements.
+Your job is to provide a highly logical, best-practice answer to unblock them so they can finish their task.
+Do not ask follow up questions. Make an executive decision and provide a clear, direct answer.
+`;
+
+export async function runHelpAgent() {
+  console.log("Starting Help Agent Cycle...");
+
+  try {
+    const { data: tasks, error: fetchError } = await supabase
+      .from('AgentTask')
+      .select('*')
+      .eq('status', 'NEEDS_HELP')
+      .order('created_at', { ascending: true })
+      .limit(1);
+
+    if (fetchError || !tasks || tasks.length === 0) {
+      console.log("No workers need help right now.");
+      return;
+    }
+
+    const task = tasks[0];
+    console.log(`[HELP AGENT] unblocking task ${task.id} for agent ${task.agent_id}...`);
+
+    // The question from the worker is stored in human_feedback (which they wrote before pausing)
+    const question = task.human_feedback || "The agent is stuck but didn't provide a question. Please provide general guidance to proceed.";
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: [{ role: 'user', parts: [{ text: `The ${task.agent_id} agent asked: "${question}". Provide a resolution.` }] }],
+      config: { systemInstruction: HELP_PROMPT, temperature: 0.4 }
+    });
+
+    // Write the answer back to human_feedback and reset status to PENDING
+    await supabase.from('AgentTask').update({ 
+      status: 'PENDING', 
+      human_feedback: `[RESOLUTION]: ${response.text}` 
+    }).eq('id', task.id);
+    
+    console.log(`[HELP AGENT] provided resolution and woke up the ${task.agent_id} agent!`);
+
+  } catch (error) {
+    console.error(`Error running Help Agent:`, error);
+  }
+}
+
+if (require.main === module) runHelpAgent();

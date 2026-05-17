@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "concurrently \"next dev\" \"npm run daemon\"",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
@@ -13,8 +13,15 @@
     "supabase:gen-types": "npx supabase gen types typescript --linked > src/utils/supabase-types.ts",
     "jarvis": "npx tsx src/agents/jarvis.ts",
     "scrum": "npx tsx src/agents/scrum_master.ts",
+    "ux": "npx tsx src/agents/ux.ts",
+    "dev-agent": "npx tsx src/agents/dev.ts",
     "seo": "npx tsx src/agents/seo.ts",
-    "workers": "npx tsx src/agents/workers.ts"
+    "qa": "npx tsx src/agents/qa.ts",
+    "security": "npx tsx src/agents/security.ts",
+    "review": "npx tsx src/agents/review.ts",
+    "devops": "npx tsx src/agents/devops.ts",
+    "run-all": "npm run ux && npm run dev-agent && npm run seo && npm run qa && npm run security && npm run review && npm run devops",
+    "daemon": "npx tsx src/daemon.ts"
   },
   "dependencies": {
     "@google/genai": "^2.3.0",
@@ -30,6 +37,7 @@
     "@types/pg": "^8.20.0",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "concurrently": "^9.2.1",
     "eslint": "^9",
     "eslint-config-next": "16.2.6",
     "tailwindcss": "^4",
