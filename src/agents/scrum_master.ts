@@ -65,7 +65,7 @@ export async function runScrumMaster() {
 
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
-      contents: [{ role: 'user', parts: [{ text: `Break down this Epic into 4 subtasks: ${epic.task_payload}` }] }],
+      contents: [{ role: 'user', parts: [{ text: `Break down this Epic into exactly 7 subtasks for the full SDLC pipeline: ${epic.task_payload}` }] }],
       config: {
         systemInstruction: SCRUM_SYSTEM_PROMPT,
         tools: [{ functionDeclarations: [createSubTasksTool] }],
@@ -107,11 +107,18 @@ export async function runScrumMaster() {
       console.log("Scrum Master successfully planned the sprint!");
       
     } else {
-      console.log("Scrum Master failed to use the tool.");
-      await supabase.from('AgentTask').update({ status: 'FAILED' }).eq('id', epic.id);
+      console.log("Scrum Master failed to use the createSubTasks tool. Response:", response.text);
+      await supabase.from('AgentTask').update({ status: 'FAILED', output_data: { error: 'Gemini did not call the createSubTasks tool', response: response.text } }).eq('id', epic.id);
     }
-  } catch (error) {
+  } catch (error: any) {
     console.error("Scrum Master crashed:", error);
+    // Try to mark the task as FAILED in the DB with the error message
+    try {
+      const { data: pending } = await supabase.from('AgentTask').select('id').eq('agent_id', 'scrum_master').eq('status', 'IN_PROGRESS').limit(1);
+      if (pending && pending[0]) {
+        await supabase.from('AgentTask').update({ status: 'FAILED', output_data: { error: error.message || String(error) } }).eq('id', pending[0].id);
+      }
+    } catch (_) {}
   }
 }
 
