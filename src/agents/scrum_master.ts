@@ -5,16 +5,20 @@ import "dotenv/config";
 
 const SCRUM_SYSTEM_PROMPT = `
 You are the Scrum Master Agent for an autonomous SDLC team.
-You receive high-level 'Epics' from Jarvis. Your job is to break these Epics down into exactly 7 sub-tasks in a strict sequence:
-1. UX Design (agent_id: 'ux')
-2. Development (agent_id: 'dev')
-3. SEO Optimization (agent_id: 'seo')
-4. QA & Testing (agent_id: 'qa')
-5. Security Audit (agent_id: 'security')
-6. Code Review (agent_id: 'review')
-7. Deployment (agent_id: 'devops')
+You receive high-level 'Epics' from Jarvis. Your job is to break these Epics down into a sequential, dependent chain of specialist sub-tasks.
 
-Use the 'createSubTasks' tool to generate these 7 tasks.
+You should dynamically select ONLY the necessary specialist agents based on the type of Epic:
+1. UX Design (agent_id: 'ux') - ONLY include if there is a user interface, visual layout, theme, or screen design required. EXCLUDE for backend, databases, APIs, cron jobs, background tasks, or scripts.
+2. Development (agent_id: 'dev') - Always include.
+3. SEO Optimization (agent_id: 'seo') - ONLY include if it is a public-facing website/webpage that needs search engine visibility, meta-tags, or indexing. EXCLUDE for internal apps, APIs, login-locked pages, or backend services.
+4. QA & Testing (agent_id: 'qa') - Always include.
+5. Security Audit (agent_id: 'security') - Always include.
+6. Code Review (agent_id: 'review') - Always include.
+7. Deployment (agent_id: 'devops') - Always include.
+
+CRITICAL: If the Epic description is a backend change, database change, schema update, cron job, worker script, API endpoint, or anything OTHER THAN a visual User Interface change, you MUST SKIP the UX Design agent (agent_id: 'ux'). Starting directly with the 'dev' agent is mandatory in these cases.
+
+Build the sequential dependency chain using the 'createSubTasks' tool in the correct execution order (e.g. ux -> dev -> seo -> qa -> security -> review -> devops, or dev -> qa -> security -> review -> devops if UX/SEO are excluded).
 `;
 
 const createSubTasksTool = {
@@ -63,7 +67,7 @@ export async function runScrumMaster() {
     await supabase.from('AgentTask').update({ status: 'IN_PROGRESS' }).eq('id', epic.id);
 
     const response = await callGemini(
-      `Break down this Epic into exactly 7 subtasks for the full SDLC pipeline: ${epic.task_payload}`,
+      `Break down this Epic dynamically, generating only the necessary sequential subtasks: ${epic.task_payload}`,
       SCRUM_SYSTEM_PROMPT,
       {
         tools: [{ functionDeclarations: [createSubTasksTool] }],

@@ -119,7 +119,7 @@ const PIPELINE_STEPS = [
   { id: 'devops',       label: 'DevOps',         icon: '🚀', description: 'Deploys to production' },
 ]
 
-type TaskStatus = 'PENDING' | 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETED' | 'FAILED' | 'BLOCKED' | 'NEEDS_HELP' | 'NEEDS_REVIEW' | 'REJECTED'
+type TaskStatus = 'PENDING' | 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETED' | 'FAILED' | 'BLOCKED' | 'NEEDS_HELP' | 'NEEDS_REVIEW' | 'REJECTED' | 'SKIPPED'
 
 function getStatusStyle(status: TaskStatus | 'WAITING') {
   const map: Record<string, { bg: string; text: string; ring: string; label: string; pulse?: boolean }> = {
@@ -131,6 +131,7 @@ function getStatusStyle(status: TaskStatus | 'WAITING') {
     NEEDS_REVIEW: { bg: 'bg-purple-500/10',   text: 'text-purple-400',  ring: 'ring-purple-500/20',  label: '⏸ Needs Review' },
     FAILED:       { bg: 'bg-red-500/10',      text: 'text-red-400',     ring: 'ring-red-500/20',     label: '✕ Failed' },
     REJECTED:     { bg: 'bg-red-500/10',      text: 'text-red-400',     ring: 'ring-red-500/20',     label: '↩ Rejected' },
+    SKIPPED:      { bg: 'bg-zinc-800/20',     text: 'text-zinc-500',    ring: 'ring-zinc-800/10',    label: '○ Skipped' },
     WAITING:      { bg: 'bg-zinc-800/30',     text: 'text-zinc-700',    ring: 'ring-zinc-800/30',    label: '… Waiting' },
   }
   return map[status] || map.WAITING
@@ -146,6 +147,7 @@ function getNodeColor(status: TaskStatus | 'WAITING') {
     FAILED: 'bg-red-500 shadow-red-500/30',
     REJECTED: 'bg-red-500 shadow-red-500/30',
     NEEDS_REVIEW: 'bg-purple-500 shadow-purple-500/30',
+    SKIPPED: 'bg-zinc-900 border border-zinc-800',
     WAITING: 'bg-zinc-800',
   }
   return map[status] || map.WAITING
@@ -261,10 +263,15 @@ export default async function EpicDetail({ params }: { params: Promise<{ id: str
             <div className="p-5">
               {PIPELINE_STEPS.map((step, index) => {
                 const task = taskMap[step.id]
-                const status: TaskStatus | 'WAITING' = task?.status || 'WAITING'
-                const style = getStatusStyle(status)
-                const nodeColor = getNodeColor(status)
+                
+                const scrumFinished = taskMap.scrum_master?.status === 'COMPLETED'
+                const isSkipped = scrumFinished && !task && (step.id === 'ux' || step.id === 'seo')
+                
+                const resolvedStatus: TaskStatus | 'WAITING' = isSkipped ? 'SKIPPED' : (task?.status || 'WAITING')
+                const style = getStatusStyle(resolvedStatus)
+                const nodeColor = getNodeColor(resolvedStatus)
                 const isLast = index === PIPELINE_STEPS.length - 1
+                const status = resolvedStatus // keep variable reference in check
                 const output = task?.output_data?.result || task?.output_data?.error
                 const feedback = task?.human_feedback
 
@@ -274,12 +281,12 @@ export default async function EpicDetail({ params }: { params: Promise<{ id: str
                     <div className="flex flex-col items-center">
                       <div className={`w-4 h-4 rounded-full shrink-0 shadow-lg ${nodeColor}`} />
                       {!isLast && (
-                        <div className={`w-0.5 flex-1 min-h-[40px] ${getLineColor(status)}`} />
+                        <div className={`w-0.5 flex-1 min-h-[40px] ${getLineColor(resolvedStatus)}`} />
                       )}
                     </div>
 
                     {/* Step Content */}
-                    <div className={`pb-6 flex-1 min-w-0 ${status === 'WAITING' ? 'opacity-40' : ''}`}>
+                    <div className={`pb-6 flex-1 min-w-0 ${resolvedStatus === 'SKIPPED' ? 'opacity-25 line-through' : resolvedStatus === 'WAITING' ? 'opacity-40' : ''}`}>
                       <div className="flex items-center gap-2 mb-0.5">
                         <span className="text-base">{step.icon}</span>
                         <span className="text-sm font-medium text-zinc-200">{step.label}</span>
