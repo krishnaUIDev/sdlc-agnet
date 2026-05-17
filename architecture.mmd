@@ -47,7 +47,7 @@ graph TD
     QA -->|7. Submits Work| DB
 
     DB -.->|8. Polls for Completed Work| Review
-    Review -->|9. Approves (or Rejects back to DB)| DB
+    Review -->|"9. Approves (or Rejects back to DB)"| DB
 
     DB -.->|10. Polls for Approved Code| DevOps
     DevOps -->|11. Merges & Deploys| Finished

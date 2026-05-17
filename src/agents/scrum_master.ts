@@ -6,13 +6,16 @@ const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 const SCRUM_SYSTEM_PROMPT = `
 You are the Scrum Master Agent for an autonomous SDLC team.
-You receive high-level 'Epics' from Jarvis. Your job is to break these Epics down into exactly 4 sub-tasks in a strict sequence:
+You receive high-level 'Epics' from Jarvis. Your job is to break these Epics down into exactly 7 sub-tasks in a strict sequence:
 1. UX Design (agent_id: 'ux')
 2. Development (agent_id: 'dev')
-3. QA & Testing (agent_id: 'qa')
-4. Security Audit (agent_id: 'security')
+3. SEO Optimization (agent_id: 'seo')
+4. QA & Testing (agent_id: 'qa')
+5. Security Audit (agent_id: 'security')
+6. Code Review (agent_id: 'review')
+7. Deployment (agent_id: 'devops')
 
-Use the 'createSubTasks' tool to generate these 4 tasks.
+Use the 'createSubTasks' tool to generate these 7 tasks.
 `;
 
 const createSubTasksTool = {
@@ -26,7 +29,7 @@ const createSubTasksTool = {
         items: {
           type: Type.OBJECT,
           properties: {
-            agentId: { type: Type.STRING, description: "Must be 'ux', 'dev', 'qa', or 'security'" },
+            agentId: { type: Type.STRING, description: "Must be 'ux', 'dev', 'seo', 'qa', 'security', 'review', or 'devops'" },
             payload: { type: Type.STRING, description: "Detailed instructions for this specific agent." }
           },
           required: ["agentId", "payload"]
