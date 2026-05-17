@@ -145,6 +145,27 @@ export default async function Dashboard() {
     return { status: 'IN_PROGRESS' }
   }
 
+  // Helper to calculate the visual progress bar completion stats
+  function getEpicProgress(epic: any): { completed: number; total: number; percent: number } {
+    if (epic.status === 'PENDING') return { completed: 0, total: 1, percent: 0 }
+    
+    // Find children and grandchildren
+    const children = taskPool.filter((t: any) => t.parent_task_id === epic.id)
+    const childIds = children.map((c: any) => c.id)
+    const grandchildren = taskPool.filter((t: any) => childIds.includes(t.parent_task_id))
+    const subTasks = [...children, ...grandchildren]
+
+    if (subTasks.length === 0) {
+      return { completed: 0, total: 1, percent: 0 }
+    }
+
+    const completed = subTasks.filter((t: any) => t.status === 'COMPLETED').length
+    const total = subTasks.length
+    const percent = Math.round((completed / total) * 100)
+
+    return { completed, total, percent }
+  }
+
   return (
     <div className="min-h-screen bg-zinc-950 text-white font-sans">
       <div className="max-w-7xl mx-auto px-6 py-8 flex flex-col lg:flex-row gap-6">
@@ -190,11 +211,13 @@ export default async function Dashboard() {
             <div className="px-5 py-3 border-b border-zinc-800 bg-zinc-900/60">
               <h2 className="text-sm font-semibold text-zinc-400 uppercase tracking-wider">Epics</h2>
             </div>
-            <table className="w-full text-left text-sm">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm min-w-[750px]">
               <thead className="border-b border-zinc-800/50">
                 <tr className="text-zinc-500 text-xs uppercase tracking-wider">
                   <th className="px-5 py-3 font-medium">ID</th>
                   <th className="px-5 py-3 font-medium">Feature</th>
+                  <th className="px-5 py-3 font-medium">Progress</th>
                   <th className="px-5 py-3 font-medium">Status</th>
                   <th className="px-5 py-3 font-medium text-right">Created</th>
                   <th className="px-5 py-3 font-medium text-right"></th>
@@ -203,7 +226,7 @@ export default async function Dashboard() {
               <tbody className="divide-y divide-zinc-800/50">
                 {epicList.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="px-5 py-10 text-center text-zinc-600 text-sm">
+                    <td colSpan={6} className="px-5 py-10 text-center text-zinc-600 text-sm">
                       No epics yet. Submit one above to start the autonomous pipeline.
                     </td>
                   </tr>
@@ -220,6 +243,25 @@ export default async function Dashboard() {
                       </td>
                       <td className="px-5 py-3.5 text-zinc-300 max-w-xs truncate" title={task.task_payload}>
                         {task.task_payload}
+                      </td>
+                      <td className="px-5 py-3.5">
+                        {(() => {
+                          const prog = getEpicProgress(task)
+                          return (
+                            <div className="flex flex-col gap-1 min-w-[120px]">
+                              <div className="flex items-center justify-between text-[10px] text-zinc-500 font-mono">
+                                <span>{prog.completed}/{prog.total} tasks</span>
+                                <span>{prog.percent}%</span>
+                              </div>
+                              <div className="w-full bg-zinc-800 rounded-full h-1 overflow-hidden">
+                                <div 
+                                  className="bg-indigo-500 h-full rounded-full transition-all duration-500" 
+                                  style={{ width: `${prog.percent}%` }}
+                                />
+                              </div>
+                            </div>
+                          )
+                        })()}
                       </td>
                       <td className="px-5 py-3.5">
                         {(() => {
@@ -258,6 +300,7 @@ export default async function Dashboard() {
             </table>
           </div>
         </div>
+      </div>
 
         {/* Right Column — Live Terminal */}
         <div className="w-full lg:w-80 xl:w-96 shrink-0">

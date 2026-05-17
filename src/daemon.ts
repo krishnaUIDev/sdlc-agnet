@@ -44,6 +44,32 @@ supabase
     }
   });
 
+// Query and process any existing pending tasks at boot
+async function checkPendingTasks() {
+  console.log("🔍 Checking database for any missed PENDING tasks...");
+  try {
+    const { data: pendingTasks, error } = await supabase
+      .from('AgentTask')
+      .select('*')
+      .eq('status', 'PENDING');
+      
+    if (error) throw error;
+    
+    if (pendingTasks && pendingTasks.length > 0) {
+      console.log(`Found ${pendingTasks.length} missed PENDING tasks at startup. Triggering...`);
+      for (const task of pendingTasks) {
+        handleEvent(task).catch(console.error);
+      }
+    } else {
+      console.log("No missed PENDING tasks found.");
+    }
+  } catch (err: any) {
+    console.error("Failed to check pending tasks at startup:", err.message);
+  }
+}
+
+checkPendingTasks();
+
 async function handleEvent(record: any) {
   const { id, agent_id, status } = record;
 
