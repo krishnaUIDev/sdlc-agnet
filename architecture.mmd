@@ -1,48 +1,53 @@
 graph TD
     classDef default fill:#1e1e1e,stroke:#333,stroke-width:1px,color:#fff;
-    classDef dashboard fill:#444,stroke:#666,color:#fff,rx:8px,ry:8px;
-    classDef orchestrator fill:#4b3b8c,stroke:#5c4b9e,color:#fff,rx:8px,ry:8px;
-    classDef worker fill:#1c5e46,stroke:#24785a,color:#fff,rx:8px,ry:8px;
-    classDef deliverable fill:#82531e,stroke:#996426,color:#fff,rx:8px,ry:8px;
-    classDef review fill:#8c3a26,stroke:#a3442d,color:#fff,rx:8px,ry:8px;
     classDef human fill:#444,stroke:#666,color:#fff,rx:8px,ry:8px;
-    classDef auto fill:#2e5917,stroke:#3b731e,color:#fff,rx:8px,ry:8px;
+    classDef db fill:#b35900,stroke:#e67300,color:#fff,rx:8px,ry:8px,font-weight:bold;
+    classDef manager fill:#4b3b8c,stroke:#5c4b9e,color:#fff,rx:8px,ry:8px;
+    classDef scrum fill:#005f73,stroke:#003f4c,color:#fff,rx:8px,ry:8px;
+    classDef worker fill:#1c5e46,stroke:#24785a,color:#fff,rx:8px,ry:8px;
+    classDef review fill:#8c3a26,stroke:#a3442d,color:#fff,rx:8px,ry:8px;
+    classDef devops fill:#7e3e98,stroke:#5c2d70,color:#fff,rx:8px,ry:8px;
 
-    DB["Shared Dashboard (polls every 15 min)<br/>Tasks • Status • Goals • Revenue metrics"]:::dashboard
-
-    Jarvis["Jarvis — Orchestrator<br/>Delegates tasks • aligns to revenue goals"]:::orchestrator
+    User["User / Human<br/>Sets Goal"]:::human
     
-    DB --> Jarvis
+    DB[("Supabase Database<br/>The 'Blackboard'<br/>All Agents read/write here")]:::db
 
-    SEO["SEO Agent<br/>Keywords • content briefs • backlinks"]:::worker
-    Social["Social Agent<br/>Posts • threads scheduling • tone"]:::worker
-    Product["Product Agent<br/>UX • analytics conversion leaks"]:::worker
-    Dev["Dev Agent<br/>Implements specs code • deploy"]:::worker
+    Jarvis["Jarvis — Manager Agent"]:::manager
+    ScrumMaster["Scrum Master Agent"]:::scrum
 
-    Jarvis --> SEO
-    Jarvis --> Social
-    Jarvis --> Product
-    Jarvis --> Dev
+    UX["UX Design Agent"]:::worker
+    Dev["Developer Agent"]:::worker
+    SEO["SEO Agent"]:::worker
+    Security["Security Agent"]:::worker
+    QA["QA / Testing Agent"]:::worker
 
-    SEOBrief["SEO brief<br/>Ready-to-publish"]:::deliverable
-    PostDrafts["Post drafts<br/>Scheduled queue"]:::deliverable
-    ImprovementSpec["Improvement spec<br/>Production-ready"]:::deliverable
-    PRDeploy["PR / deploy<br/>Staged changes"]:::deliverable
+    Review["Review Agent<br/>(Quality Gate)"]:::review
+    DevOps["DevOps Agent"]:::devops
+    Finished["Deployed Application"]:::human
 
-    SEO --> SEOBrief
-    Social --> PostDrafts
-    Product --> ImprovementSpec
-    Dev --> PRDeploy
+    %% Communication Flow: Everything goes through the DB
+    User -->|1. Creates Epic| DB
+    
+    DB -.->|2. Polls for Epics| Jarvis
+    Jarvis -->|3. Updates Epic Status| DB
+    
+    DB -.->|4. Polls for Epic breakdown| ScrumMaster
+    ScrumMaster -->|5. Creates Sub-tasks| DB
 
-    Review["Review Agent<br/>Quality gate • no premature publishing"]:::review
+    DB -.->|6. Polls for Assignments| UX
+    DB -.->|6. Polls for Assignments| Dev
+    DB -.->|6. Polls for Assignments| SEO
+    DB -.->|6. Polls for Assignments| Security
+    DB -.->|6. Polls for Assignments| QA
 
-    SEOBrief --> Review
-    PostDrafts --> Review
-    ImprovementSpec --> Review
-    PRDeploy --> Review
+    UX -->|7. Submits Work| DB
+    Dev -->|7. Submits Work| DB
+    SEO -->|7. Submits Work| DB
+    Security -->|7. Submits Work| DB
+    QA -->|7. Submits Work| DB
 
-    Human["Human review<br/>Flagged or high-risk items"]:::human
-    AutoPublish["Auto-publish<br/>Approved low-risk items"]:::auto
+    DB -.->|8. Polls for Completed Work| Review
+    Review -->|9. Approves (or Rejects back to DB)| DB
 
-    Review --> Human
-    Review --> AutoPublish
+    DB -.->|10. Polls for Approved Code| DevOps
+    DevOps -->|11. Merges & Deploys| Finished

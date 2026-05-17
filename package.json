@@ -12,7 +12,9 @@
     "supabase:push": "npx supabase db push",
     "supabase:gen-types": "npx supabase gen types typescript --linked > src/utils/supabase-types.ts",
     "jarvis": "npx tsx src/agents/jarvis.ts",
-    "seo": "npx tsx src/agents/seo.ts"
+    "scrum": "npx tsx src/agents/scrum_master.ts",
+    "seo": "npx tsx src/agents/seo.ts",
+    "workers": "npx tsx src/agents/workers.ts"
   },
   "dependencies": {
     "@google/genai": "^2.3.0",

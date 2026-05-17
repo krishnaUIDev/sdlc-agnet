@@ -1,6 +1,22 @@
 import { supabase } from '@/utils/supabase'
+import { revalidatePath } from 'next/cache'
 
 export const dynamic = 'force-dynamic'
+
+async function createEpic(formData: FormData) {
+  'use server'
+  const feature = formData.get('feature') as string
+  if (!feature) return
+
+  await supabase.from('AgentTask').insert([{
+    agent_id: 'jarvis',
+    status: 'PENDING',
+    priority_score: 10.0,
+    task_payload: feature,
+  }])
+  
+  revalidatePath('/')
+}
 
 export default async function Dashboard() {
   // Fetch tasks
@@ -18,14 +34,24 @@ export default async function Dashboard() {
   return (
     <div className="min-h-screen bg-zinc-950 text-white p-8 font-sans">
       <div className="max-w-6xl mx-auto space-y-8">
-        <header className="flex justify-between items-end border-b border-zinc-800 pb-4">
+        <header className="flex flex-col md:flex-row justify-between items-start md:items-end border-b border-zinc-800 pb-6 gap-4">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">Agent Dashboard</h1>
+            <h1 className="text-3xl font-bold tracking-tight">SDLC Agent Dashboard</h1>
             <p className="text-zinc-400 mt-1">Single source of truth for all autonomous tasks.</p>
           </div>
-          <div className="text-sm text-zinc-500">
-            Live Database View
-          </div>
+          
+          <form action={createEpic} className="flex gap-2 w-full md:w-auto">
+            <input 
+              name="feature"
+              type="text" 
+              placeholder="E.g., Build a dark mode toggle..." 
+              className="bg-zinc-900 border border-zinc-700 text-white rounded-lg px-4 py-2 w-full md:w-80 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              required
+            />
+            <button type="submit" className="bg-indigo-600 hover:bg-indigo-700 text-white font-medium px-4 py-2 rounded-lg transition-colors whitespace-nowrap">
+              Submit Epic
+            </button>
+          </form>
         </header>
 
         <div className="overflow-x-auto rounded-xl border border-zinc-800 bg-zinc-900/50">

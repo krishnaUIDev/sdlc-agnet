@@ -42,13 +42,34 @@ const createAgentTaskTool = {
 export async function runJarvis() {
   console.log("Starting Jarvis Orchestration Cycle...");
 
-  const currentContext = "We are currently at $10k MRR. Our organic traffic is flat month-over-month. We released a new feature last week but adoption is low. We need to push SEO and product UX improvements.";
-
   try {
+    // 1. Fetch pending Epic submitted by the CEO
+    const { data: epics, error: fetchError } = await supabase
+      .from('AgentTask')
+      .select('*')
+      .eq('agent_id', 'jarvis')
+      .eq('status', 'PENDING')
+      .order('created_at', { ascending: true })
+      .limit(1);
+
+    if (fetchError) throw fetchError;
+
+    if (!epics || epics.length === 0) {
+      console.log("No new epics from the CEO. Jarvis is standing by.");
+      return;
+    }
+
+    const epic = epics[0];
+    console.log(`CEO submitted Epic: "${epic.task_payload}"`);
+
+    // Mark as IN_PROGRESS
+    await supabase.from('AgentTask').update({ status: 'IN_PROGRESS' }).eq('id', epic.id);
+
+    // Call Gemini to hand it off to the Scrum Master
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
       contents: [
-        { role: 'user', parts: [{ text: currentContext }] }
+        { role: 'user', parts: [{ text: `The CEO requested: "${epic.task_payload}". Create an Epic task for the Scrum Master.` }] }
       ],
       config: {
         systemInstruction: JARVIS_SYSTEM_PROMPT,
@@ -61,26 +82,30 @@ export async function runJarvis() {
       for (const call of response.functionCalls) {
         if (call.name === 'createAgentTask' && call.args) {
           const args = call.args as { agentId: string, priorityScore: number, payload: string };
-          const { agentId, priorityScore, payload } = args;
+          // Override agentId to always be Scrum Master since we changed architecture
+          const assignedAgent = 'scrum_master'; 
 
-          console.log(`Jarvis is creating a task for [${agentId}] with priority ${priorityScore}`);
+          console.log(`Jarvis is assigning Epic to [${assignedAgent}]...`);
           
           const { error } = await supabase.from('AgentTask').insert([{
-            agent_id: agentId,
-            priority_score: priorityScore,
+            agent_id: assignedAgent,
+            priority_score: args.priorityScore,
             status: 'PENDING',
-            task_payload: payload,
+            task_payload: args.payload,
+            parent_task_id: epic.id // Link it back to the CEO's original request!
           }]);
 
-          if (error) {
-            console.error("Failed to insert task into Supabase:", error);
-          }
+          if (error) console.error("Failed to insert task:", error);
         }
       }
-      console.log("Jarvis finished delegating tasks.");
+      
+      // Mark original epic as COMPLETED
+      await supabase.from('AgentTask').update({ status: 'COMPLETED' }).eq('id', epic.id);
+      console.log("Jarvis successfully processed the Epic and handed it to the Scrum Master.");
+      
     } else {
-      console.log("Jarvis decided no new tasks were needed right now.");
-      console.log("Jarvis response:", response.text);
+      console.log("Jarvis didn't think this required Scrum Master attention.");
+      await supabase.from('AgentTask').update({ status: 'NEEDS_REVIEW', output_data: { response: response.text } }).eq('id', epic.id);
     }
   } catch (error) {
     console.error("Jarvis failed:", error);
