@@ -1,4 +1,3 @@
-```mermaid
 graph TD
     classDef default fill:#1e1e1e,stroke:#333,stroke-width:1px,color:#fff;
     classDef human fill:#444,stroke:#666,color:#fff,rx:8px,ry:8px;
@@ -10,13 +9,13 @@ graph TD
     classDef devops fill:#7e3e98,stroke:#5c2d70,color:#fff,rx:8px,ry:8px;
     classDef monitor fill:#a32a2a,stroke:#c43333,color:#fff,rx:8px,ry:8px;
 
-    User["User / Human<br/>Sets Goal"]:::human
-    
-    DB[("Supabase DB + Realtime - Pub/Sub<br/>State: PENDING → ASSIGNED → IN_PROGRESS → COMPLETED/REJECTED")]:::db
+    User["User / CEO"]:::human
 
-    Watcher["SLA / Timeout Monitor<br/>Flags stuck tasks"]:::monitor
+    DB[("Supabase DB + Realtime PubSub")]:::db
 
-    Jarvis["Jarvis — Manager Agent"]:::manager
+    Watcher["SLA / Timeout Monitor"]:::monitor
+
+    Jarvis["Jarvis - Manager Agent"]:::manager
     ScrumMaster["Scrum Master Agent"]:::scrum
 
     UX["UX Design Agent"]:::worker
@@ -25,50 +24,56 @@ graph TD
     Security["Security Agent"]:::worker
     QA["QA / Testing Agent"]:::worker
 
-    HelpAgent["Help / Resolution Agent<br/>Unblocks stuck agents"]:::manager
-    Review["Review Agent<br/>Quality Gate"]:::review
+    HelpAgent["Help / Resolution Agent"]:::manager
+    Review["Review Agent - Quality Gate"]:::review
     DevOps["DevOps Agent"]:::devops
     Finished["Deployed Application"]:::human
-    Rollback["Previous Version<br/>Rollback Target"]:::human
+    Rollback["Previous Version - Rollback"]:::human
 
-    %% Communication Flow: Event Bus / Pub/Sub
-    User -->|1. Creates Epic| DB
-    DB -.->|Pub/Sub Event| Watcher
-    
+    %% CEO to Database
+    User -->|Creates Epic| DB
+    DB -.->|PubSub Event| Watcher
+
+    %% Orchestration Layer
     DB -.->|Event: New Epic| Jarvis
-    Jarvis -->|Updates Epic Status| DB
-    
-    DB -.->|Event: Epic Breakdown| ScrumMaster
-    ScrumMaster -->|Creates Sub-tasks| DB
+    Jarvis -->|Delegates to Scrum| DB
 
-    %% Task Execution & Pub/Sub Assignment
+    DB -.->|Event: Epic Breakdown| ScrumMaster
+    ScrumMaster -->|Creates 7 Sub-tasks| DB
+
+    %% Worker Assignment via PubSub
     DB -.->|Event: Task PENDING| UX
     DB -.->|Event: Task PENDING| Dev
     DB -.->|Event: Task PENDING| SEO
     DB -.->|Event: Task PENDING| Security
     DB -.->|Event: Task PENDING| QA
 
-    %% Dependencies
+    %% Sequential Dependencies
     Dev -.->|Waits for| UX
     QA -.->|Waits for| Dev
     Security -.->|Waits for| Dev
-    Review -.->|Waits for| QA & Security & SEO
+    Review -.->|Waits for| QA
+    Review -.->|Waits for| Security
+    Review -.->|Waits for| SEO
 
+    %% Workers submit back
     UX -->|Submits Work| DB
     Dev -->|Submits Work| DB
     SEO -->|Submits Work| DB
     Security -->|Submits Work| DB
     QA -->|Submits Work| DB
 
+    %% Help Agent Loop
     DB -.->|Event: NEEDS_HELP| HelpAgent
-    HelpAgent -->|Provides Answer, resets to PENDING| DB
+    HelpAgent -->|Resolves and resets to PENDING| DB
 
+    %% Review Gate
     DB -.->|Event: Tasks COMPLETED| Review
     Review -->|Approves| DB
-    Review -->|REJECTS - Sets status| DB
-    DB -.->|Event: REJECTED - Reassigns| Dev
+    Review -->|Rejects| DB
+    DB -.->|Event: REJECTED| Dev
 
+    %% Deployment
     DB -.->|Event: APPROVED| DevOps
-    DevOps -->|Merges and Deploys| Finished
-    DevOps -.->|Fails Deployment| Rollback
-```
+    DevOps -->|Deploys| Finished
+    DevOps -.->|Deploy Failed| Rollback
