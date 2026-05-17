@@ -1,17 +1,122 @@
 import { supabase } from '@/utils/supabase'
+import { revalidatePath } from 'next/cache'
 import Link from 'next/link'
 
 export const dynamic = 'force-dynamic'
 
+async function retryTask(formData: FormData) {
+  'use server'
+  const taskId = formData.get('taskId') as string
+  const epicId = formData.get('epicId') as string
+  if (!taskId) return
+
+  await supabase.from('AgentTask').update({
+    status: 'PENDING',
+    output_data: null,
+    human_feedback: null
+  }).eq('id', taskId)
+
+  revalidatePath(`/epic/${epicId}`)
+}
+
+async function resolveHelpTask(formData: FormData) {
+  'use server'
+  const taskId = formData.get('taskId') as string
+  const resolution = formData.get('resolution') as string
+  const epicId = formData.get('epicId') as string
+  if (!taskId || !resolution) return
+
+  await supabase.from('AgentTask').update({
+    status: 'PENDING',
+    human_feedback: `[RESOLUTION]: ${resolution}`
+  }).eq('id', taskId)
+
+  revalidatePath(`/epic/${epicId}`)
+}
+
+async function approveReviewTask(formData: FormData) {
+  'use server'
+  const taskId = formData.get('taskId') as string
+  const epicId = formData.get('epicId') as string
+  if (!taskId) return
+
+  await supabase.from('AgentTask').update({
+    status: 'COMPLETED'
+  }).eq('id', taskId)
+
+  const { data: dependentTasks } = await supabase
+    .from('AgentTask')
+    .select('id')
+    .eq('depends_on_task_id', taskId)
+    .eq('status', 'BLOCKED')
+
+  if (dependentTasks && dependentTasks.length > 0) {
+    for (const depTask of dependentTasks) {
+      await supabase.from('AgentTask').update({
+        status: 'PENDING'
+      }).eq('id', depTask.id)
+    }
+  }
+
+  revalidatePath(`/epic/${epicId}`)
+}
+
+async function rejectReviewTask(formData: FormData) {
+  'use server'
+  const taskId = formData.get('taskId') as string
+  const feedback = formData.get('feedback') as string
+  const epicId = formData.get('epicId') as string
+  if (!taskId || !feedback) return
+
+  await supabase.from('AgentTask').update({
+    status: 'REJECTED',
+    output_data: { error: `Rejected by human review: ${feedback}` }
+  }).eq('id', taskId)
+
+  const { data: reviewTask } = await supabase
+    .from('AgentTask')
+    .select('parent_task_id')
+    .eq('id', taskId)
+    .single()
+
+  if (reviewTask?.parent_task_id) {
+    const { data: devTask } = await supabase
+      .from('AgentTask')
+      .select('id')
+      .eq('parent_task_id', reviewTask.parent_task_id)
+      .eq('agent_id', 'dev')
+      .single()
+
+    if (devTask) {
+      await supabase.from('AgentTask').update({
+        status: 'PENDING',
+        output_data: null,
+        human_feedback: `[REJECTION FEEDBACK]: ${feedback}`
+      }).eq('id', devTask.id)
+
+      const subsequentAgents = ['seo', 'qa', 'security', 'review', 'devops']
+      await supabase.from('AgentTask').update({
+        status: 'BLOCKED',
+        output_data: null,
+        human_feedback: null
+      }).eq('parent_task_id', reviewTask.parent_task_id)
+        .in('agent_id', subsequentAgents)
+    }
+  }
+
+  revalidatePath(`/epic/${epicId}`)
+}
+
 const PIPELINE_STEPS = [
-  { id: 'scrum_master', label: 'Scrum Master', icon: '📋', description: 'Breaks down epic into sub-tasks' },
-  { id: 'ux',           label: 'UX Design',    icon: '🎨', description: 'Wireframes & design system' },
-  { id: 'dev',          label: 'Developer',     icon: '💻', description: 'Writes application code' },
-  { id: 'seo',          label: 'SEO',           icon: '🔍', description: 'Optimizes for search engines' },
-  { id: 'qa',           label: 'QA Testing',    icon: '🧪', description: 'Writes & runs test suites' },
-  { id: 'security',     label: 'Security',      icon: '🔒', description: 'OWASP vulnerability audit' },
-  { id: 'review',       label: 'Code Review',   icon: '✅', description: 'Final quality gate' },
-  { id: 'devops',       label: 'DevOps',        icon: '🚀', description: 'Deploys to production' },
+  { id: 'jarvis',       label: 'Manager',      icon: '🤖', description: 'Receives epic and delegates to Scrum Master' },
+  { id: 'scrum_master', label: 'Scrum Master',  icon: '📋', description: 'Breaks down epic into sub-tasks' },
+  { id: 'ux',           label: 'UX Design',     icon: '🎨', description: 'Wireframes & design system' },
+  { id: 'dev',          label: 'Developer',      icon: '💻', description: 'Writes application code' },
+  { id: 'seo',          label: 'SEO',            icon: '🔍', description: 'Optimizes for search engines' },
+  { id: 'qa',           label: 'QA Testing',     icon: '🧪', description: 'Writes & runs test suites' },
+  { id: 'security',     label: 'Security',       icon: '🔒', description: 'OWASP vulnerability audit' },
+  { id: 'review',       label: 'Code Review',    icon: '✅', description: 'Final quality gate' },
+  { id: 'devops',       label: 'DevOps',         icon: '🚀', description: 'Deploys to production' },
 ]
 
 type TaskStatus = 'PENDING' | 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETED' | 'FAILED' | 'BLOCKED' | 'NEEDS_HELP' | 'NEEDS_REVIEW' | 'REJECTED'
@@ -95,7 +200,10 @@ export default async function EpicDetail({ params }: { params: Promise<{ id: str
   const allSubTasks = scrumTask ? [scrumTask, ...workerTasks] : []
 
   // Build a lookup: agent_id -> task
-  const taskMap: Record<string, any> = {}
+  // Include the epic itself as the Jarvis task (since Jarvis IS the root epic task)
+  const taskMap: Record<string, any> = {
+    jarvis: epic, // The root epic record is Jarvis's task
+  }
   for (const t of allSubTasks) {
     taskMap[t.agent_id] = t
   }
@@ -146,7 +254,7 @@ export default async function EpicDetail({ params }: { params: Promise<{ id: str
             <div className="px-5 py-3 border-b border-zinc-800 bg-zinc-900/60 flex items-center justify-between">
               <h2 className="text-sm font-semibold text-zinc-400 uppercase tracking-wider">Agent Pipeline</h2>
               <span className="text-[10px] text-zinc-600 font-mono">
-                {allSubTasks.filter((t: any) => t.status === 'COMPLETED').length}/{PIPELINE_STEPS.length} completed
+                {Object.values(taskMap).filter((t: any) => t.status === 'COMPLETED').length}/{PIPELINE_STEPS.length} completed
               </span>
             </div>
 
@@ -187,9 +295,143 @@ export default async function EpicDetail({ params }: { params: Promise<{ id: str
                         </div>
                       )}
 
-                      {status === 'FAILED' && output && (
-                        <div className="mt-1.5 text-xs bg-red-500/5 border border-red-500/10 rounded-lg px-3 py-2 text-red-300/80 font-mono">
-                          ✕ {output}
+                      {status === 'FAILED' && output && (() => {
+                        let parsedError = output;
+                        let isRateLimit = false;
+                        let friendlyMsg = "";
+                        
+                        try {
+                          const obj = typeof output === 'string' ? JSON.parse(output) : output;
+                          if (obj.error) {
+                            friendlyMsg = obj.error.message || "";
+                            isRateLimit = obj.error.status === "RESOURCE_EXHAUSTED" || String(friendlyMsg).includes("429") || String(friendlyMsg).includes("quota");
+                            parsedError = JSON.stringify(obj, null, 2);
+                          } else if (obj.message) {
+                            friendlyMsg = obj.message;
+                            parsedError = obj.stack || JSON.stringify(obj, null, 2);
+                          }
+                        } catch (_) {}
+
+                        return (
+                          <div className="mt-2 text-xs border rounded-lg overflow-hidden border-red-500/20 bg-red-500/5">
+                            <div className="px-3 py-2 text-red-400 font-medium bg-red-950/20 border-b border-red-500/10 flex items-center gap-1.5">
+                              <span>✕</span>
+                              <span>
+                                {isRateLimit 
+                                  ? "Gemini API Quota Exceeded (429 Rate Limit)" 
+                                  : "Task Failed"}
+                              </span>
+                            </div>
+                            <div className="p-3 text-red-300/80 leading-relaxed font-sans">
+                              {friendlyMsg || (typeof output === 'string' ? output : JSON.stringify(output))}
+                              
+                              <details className="mt-2 group">
+                                <summary className="text-[10px] text-zinc-500 cursor-pointer hover:text-zinc-400 transition-colors select-none">
+                                  View diagnostic log →
+                                </summary>
+                                <pre className="mt-2 text-[10px] text-zinc-400 bg-zinc-950 border border-zinc-800/80 rounded-lg p-2.5 overflow-x-auto max-h-32 font-mono whitespace-pre-wrap">
+                                  {parsedError}
+                                </pre>
+                              </details>
+                            </div>
+                          </div>
+                        );
+                      })()}
+
+                      {/* 1. Retry Button for Failed Tasks */}
+                      {status === 'FAILED' && task && (
+                        <form action={retryTask} className="mt-3">
+                          <input type="hidden" name="taskId" value={task.id} />
+                          <input type="hidden" name="epicId" value={epic.id} />
+                          <button
+                            type="submit"
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-zinc-800 hover:bg-zinc-700 active:bg-zinc-800 text-zinc-200 border border-zinc-700 hover:border-zinc-600 transition-all cursor-pointer shadow-sm hover:shadow-md"
+                          >
+                            🔄 Retry Agent
+                          </button>
+                        </form>
+                      )}
+
+                      {/* 2. Interactive Help Response Form */}
+                      {status === 'NEEDS_HELP' && task && (
+                        <div className="mt-3 p-3.5 border rounded-lg border-amber-500/20 bg-amber-500/5 space-y-2.5">
+                          <p className="text-[11px] font-medium text-amber-400">💡 Provide Resolution Details</p>
+                          <form action={resolveHelpTask} className="space-y-2">
+                            <input type="hidden" name="taskId" value={task.id} />
+                            <input type="hidden" name="epicId" value={epic.id} />
+                            <textarea
+                              name="resolution"
+                              rows={2}
+                              required
+                              placeholder="e.g., Use Outfit font. Integrate Google OAuth only. Keep the layout super compact."
+                              className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-2.5 py-2 text-[11px] text-zinc-200 placeholder:text-zinc-600 font-sans focus:outline-none focus:ring-1 focus:ring-amber-500/50"
+                            />
+                            <button
+                              type="submit"
+                              className="inline-flex items-center gap-1 px-3 py-1 rounded-md text-[10px] font-semibold bg-amber-500 hover:bg-amber-400 active:bg-amber-500 text-zinc-950 transition-colors cursor-pointer shadow-sm"
+                            >
+                              🚀 Send Resolution & Resume
+                            </button>
+                          </form>
+                        </div>
+                      )}
+
+                      {/* 3. Human Release Gate (Approve / Reject) for Needs Review */}
+                      {status === 'NEEDS_REVIEW' && task && (
+                        <div className="mt-3 p-4 border rounded-xl border-purple-500/20 bg-purple-500/5 space-y-4">
+                          <div>
+                            <p className="text-xs font-semibold text-purple-400">🛡️ Human Release Gate</p>
+                            <p className="text-[10px] text-zinc-500 leading-relaxed mt-0.5">Please review the agent output and decide whether to approve deployment or send the code back to the developer with adjustments.</p>
+                          </div>
+
+                          {output && (
+                            <details className="group border border-purple-500/10 rounded-lg bg-zinc-950 overflow-hidden" open>
+                              <summary className="px-3 py-2 text-[11px] text-purple-300 font-medium cursor-pointer hover:text-purple-200 bg-purple-950/10 border-b border-purple-500/5 select-none">
+                                View Review Report
+                              </summary>
+                              <pre className="text-[10px] text-zinc-300 p-3 overflow-x-auto max-h-40 whitespace-pre-wrap leading-relaxed">
+                                {output}
+                              </pre>
+                            </details>
+                          )}
+
+                          <div className="flex flex-col sm:flex-row gap-3 pt-1 border-t border-purple-500/10">
+                            {/* Approve */}
+                            <form action={approveReviewTask} className="flex-1">
+                              <input type="hidden" name="taskId" value={task.id} />
+                              <input type="hidden" name="epicId" value={epic.id} />
+                              <button
+                                type="submit"
+                                className="w-full inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg text-xs font-bold bg-emerald-500 hover:bg-emerald-400 active:bg-emerald-500 text-zinc-950 transition-colors cursor-pointer shadow-sm hover:shadow-md"
+                              >
+                                ✅ Approve & Deploy
+                              </button>
+                            </form>
+
+                            {/* Reject / Send back */}
+                            <details className="flex-1 group">
+                              <summary className="w-full inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg text-xs font-bold border border-red-500/20 hover:border-red-500/35 bg-red-500/5 hover:bg-red-500/10 text-red-400 transition-all cursor-pointer shadow-sm select-none">
+                                ❌ Reject & Fix
+                              </summary>
+                              <form action={rejectReviewTask} className="mt-2.5 space-y-2 bg-zinc-950 border border-zinc-800 rounded-lg p-3">
+                                <input type="hidden" name="taskId" value={task.id} />
+                                <input type="hidden" name="epicId" value={epic.id} />
+                                <textarea
+                                  name="feedback"
+                                  rows={2}
+                                  required
+                                  placeholder="Provide reason & what the developer should fix..."
+                                  className="w-full bg-zinc-900 border border-zinc-800 rounded-md px-2.5 py-2 text-[11px] text-zinc-200 placeholder:text-zinc-600 font-sans focus:outline-none focus:ring-1 focus:ring-red-500/50"
+                                />
+                                <button
+                                  type="submit"
+                                  className="w-full inline-flex items-center justify-center gap-1 px-3 py-1.5 rounded-md text-[10px] font-bold bg-red-500 hover:bg-red-400 active:bg-red-500 text-zinc-950 transition-colors cursor-pointer shadow-sm"
+                                >
+                                  ↩ Send back to Developer
+                                </button>
+                              </form>
+                            </details>
+                          </div>
                         </div>
                       )}
 

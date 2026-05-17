@@ -1,8 +1,7 @@
-import { GoogleGenAI, Type } from '@google/genai';
+import { Type } from '@google/genai';
+import { callGemini } from '../utils/gemini';
 import { supabase } from '../utils/supabase';
 import "dotenv/config";
-
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 const SCRUM_SYSTEM_PROMPT = `
 You are the Scrum Master Agent for an autonomous SDLC team.
@@ -63,24 +62,27 @@ export async function runScrumMaster() {
 
     await supabase.from('AgentTask').update({ status: 'IN_PROGRESS' }).eq('id', epic.id);
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: [{ role: 'user', parts: [{ text: `Break down this Epic into exactly 7 subtasks for the full SDLC pipeline: ${epic.task_payload}` }] }],
-      config: {
-        systemInstruction: SCRUM_SYSTEM_PROMPT,
+    const response = await callGemini(
+      `Break down this Epic into exactly 7 subtasks for the full SDLC pipeline: ${epic.task_payload}`,
+      SCRUM_SYSTEM_PROMPT,
+      {
         tools: [{ functionDeclarations: [createSubTasksTool] }],
         temperature: 0.2,
+        forceToolUse: true,
       }
-    });
+    );
 
     if (response.functionCalls && response.functionCalls.length > 0) {
       for (const call of response.functionCalls) {
         if (call.name === 'createSubTasks' && call.args && Array.isArray(call.args.tasks)) {
           let previousTaskId: string | null = null;
+          const sprintPlan: string[] = [];
           
           // Insert tasks sequentially to build the dependency chain
-          for (const t of call.args.tasks) {
+          for (let i = 0; i < call.args.tasks.length; i++) {
+            const t = call.args.tasks[i];
             console.log(`Assigning sub-task to [${t.agentId}]...`);
+            sprintPlan.push(`${i + 1}. [${t.agentId}] ${t.payload.substring(0, 120)}`);
             
             const response = await supabase.from('AgentTask').insert([{
               agent_id: t.agentId,
@@ -100,11 +102,15 @@ export async function runScrumMaster() {
               previousTaskId = insertedTask.id; // Next task depends on this one!
             }
           }
+
+          // Save sprint plan summary to scrum master's output
+          await supabase.from('AgentTask').update({ 
+            status: 'COMPLETED', 
+            output_data: { result: `Sprint Plan (${call.args.tasks.length} tasks):\n${sprintPlan.join('\n')}` }
+          }).eq('id', epic.id);
+          console.log("Scrum Master successfully planned the sprint!");
         }
       }
-      
-      await supabase.from('AgentTask').update({ status: 'COMPLETED' }).eq('id', epic.id);
-      console.log("Scrum Master successfully planned the sprint!");
       
     } else {
       console.log("Scrum Master failed to use the createSubTasks tool. Response:", response.text);

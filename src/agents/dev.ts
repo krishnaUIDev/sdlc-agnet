@@ -1,8 +1,6 @@
-import { GoogleGenAI } from '@google/genai';
+import { callGemini } from '../utils/gemini';
 import { supabase } from '../utils/supabase';
 import "dotenv/config";
-
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 const DEV_PROMPT = `You are the Developer Agent. Write the React/Next.js code to implement the UX design and payload requirements.`;
 
@@ -28,11 +26,10 @@ export async function runDevAgent() {
 
     await supabase.from('AgentTask').update({ status: 'IN_PROGRESS' }).eq('id', task.id);
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: [{ role: 'user', parts: [{ text: `Execute this task: ${task.task_payload}` }] }],
-      config: { systemInstruction: DEV_PROMPT, temperature: 0.3 }
-    });
+    const response = await callGemini(
+      `Execute this task: ${task.task_payload}`,
+      DEV_PROMPT
+    );
 
     await supabase.from('AgentTask').update({ 
       status: 'COMPLETED', 
@@ -54,8 +51,12 @@ export async function runDevAgent() {
       }
     }
 
-  } catch (error) {
+  } catch (error: any) {
     console.error(`Error running dev:`, error);
+    try {
+      const { data: stuck } = await supabase.from('AgentTask').select('id').eq('agent_id', 'dev').eq('status', 'IN_PROGRESS').limit(1);
+      if (stuck?.[0]) await supabase.from('AgentTask').update({ status: 'FAILED', output_data: { error: error.message || String(error) } }).eq('id', stuck[0].id);
+    } catch (_) {}
   }
 }
 

@@ -58,11 +58,17 @@ async function deleteEpic(formData: FormData) {
 }
 
 export default async function Dashboard() {
+  // Fetch all epics (Jarvis tasks)
   const { data: tasks } = await supabase
     .from('AgentTask')
     .select('*')
     .eq('agent_id', 'jarvis')
     .order('created_at', { ascending: false })
+
+  // Fetch all tasks in the system to calculate active pipeline status
+  const { data: allTasks } = await supabase
+    .from('AgentTask')
+    .select('id, agent_id, status, parent_task_id')
 
   const { data: logs } = await supabase
     .from('AgentLog')
@@ -71,7 +77,73 @@ export default async function Dashboard() {
     .limit(50)
 
   const epicList = tasks || []
+  const taskPool = allTasks || []
   const logList = logs || []
+
+  // Helper to calculate the overall progress state of the Epic
+  function getEpicAggregateStatus(epic: any): { status: string; stepLabel?: string } {
+    if (epic.status === 'PENDING') return { status: 'PENDING' }
+    if (epic.status === 'FAILED') return { status: 'FAILED', stepLabel: 'Manager' }
+    if (epic.status === 'IN_PROGRESS') return { status: 'IN_PROGRESS', stepLabel: 'Manager' }
+
+    // Find children (Scrum Master task)
+    const children = taskPool.filter((t: any) => t.parent_task_id === epic.id)
+    const childIds = children.map((c: any) => c.id)
+
+    // Find grandchildren (UX, Dev, QA, etc.)
+    const grandchildren = taskPool.filter((t: any) => childIds.includes(t.parent_task_id))
+
+    const subTasks = [...children, ...grandchildren]
+
+    if (subTasks.length === 0) {
+      return { status: 'IN_PROGRESS', stepLabel: 'Scrum Master' }
+    }
+
+    // Friendly names mapping
+    const agentLabels: Record<string, string> = {
+      jarvis: 'Manager',
+      scrum_master: 'Scrum Master',
+      ux: 'UX Design',
+      dev: 'Developer',
+      seo: 'SEO',
+      qa: 'QA Testing',
+      security: 'Security',
+      review: 'Code Review',
+      devops: 'DevOps',
+    }
+
+    // Precedence 1: If any subtask is failed/rejected -> FAILED
+    const failedTask = subTasks.find((t: any) => t.status === 'FAILED' || t.status === 'REJECTED')
+    if (failedTask) {
+      return { status: 'FAILED', stepLabel: agentLabels[failedTask.agent_id] || failedTask.agent_id }
+    }
+
+    // Precedence 2: If any subtask needs help -> NEEDS_HELP
+    const helpTask = subTasks.find((t: any) => t.status === 'NEEDS_HELP')
+    if (helpTask) {
+      return { status: 'NEEDS_HELP', stepLabel: agentLabels[helpTask.agent_id] || helpTask.agent_id }
+    }
+
+    // Precedence 3: If any subtask needs review -> NEEDS_REVIEW
+    const reviewTask = subTasks.find((t: any) => t.status === 'NEEDS_REVIEW')
+    if (reviewTask) {
+      return { status: 'NEEDS_REVIEW', stepLabel: agentLabels[reviewTask.agent_id] || reviewTask.agent_id }
+    }
+
+    // Precedence 4: If all subtasks are completed -> COMPLETED
+    if (subTasks.every((t: any) => t.status === 'COMPLETED')) {
+      return { status: 'COMPLETED' }
+    }
+
+    // Precedence 5: If any subtask is active -> IN_PROGRESS
+    const activeTask = subTasks.find((t: any) => t.status === 'IN_PROGRESS')
+    if (activeTask) {
+      return { status: 'IN_PROGRESS', stepLabel: agentLabels[activeTask.agent_id] || activeTask.agent_id }
+    }
+
+    // Otherwise, the pipeline is active
+    return { status: 'IN_PROGRESS' }
+  }
 
   return (
     <div className="min-h-screen bg-zinc-950 text-white font-sans">
@@ -150,7 +222,19 @@ export default async function Dashboard() {
                         {task.task_payload}
                       </td>
                       <td className="px-5 py-3.5">
-                        <StatusBadge status={task.status} />
+                        {(() => {
+                          const res = getEpicAggregateStatus(task)
+                          return (
+                            <div className="flex items-center gap-2">
+                              <StatusBadge status={res.status} />
+                              {res.stepLabel && (res.status === 'FAILED' || res.status === 'NEEDS_HELP' || res.status === 'NEEDS_REVIEW' || res.status === 'IN_PROGRESS') && (
+                                <span className="text-[11px] text-zinc-500 font-mono tracking-tight shrink-0">
+                                  ({res.stepLabel})
+                                </span>
+                              )}
+                            </div>
+                          )
+                        })()}
                       </td>
                       <td className="px-5 py-3.5 text-zinc-600 text-xs text-right tabular-nums">
                         {new Date(task.created_at).toLocaleDateString()} {new Date(task.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -213,6 +297,7 @@ function StatusBadge({ status }: { status: string }) {
     NEEDS_REVIEW: 'bg-purple-500/10 text-purple-400 ring-purple-500/20',
     BLOCKED: 'bg-red-500/10 text-red-400 ring-red-500/20',
     REJECTED: 'bg-red-500/10 text-red-400 ring-red-500/20',
+    FAILED: 'bg-red-500/10 text-red-400 ring-red-500/20',
   }
   const cls = styles[status] || 'bg-zinc-500/10 text-zinc-400 ring-zinc-500/20'
 

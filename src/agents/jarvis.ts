@@ -1,8 +1,7 @@
-import { GoogleGenAI, Type } from '@google/genai';
+import { Type } from '@google/genai';
+import { callGemini } from '../utils/gemini';
 import { supabase } from '../utils/supabase';
 import "dotenv/config";
-
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 const JARVIS_SYSTEM_PROMPT = `
 You are Jarvis, the lead orchestration agent for a software development team. 
@@ -61,18 +60,15 @@ export async function runJarvis() {
     // Mark as IN_PROGRESS
     await supabase.from('AgentTask').update({ status: 'IN_PROGRESS' }).eq('id', epic.id);
 
-    // Call Gemini to hand it off to the Scrum Master
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: [
-        { role: 'user', parts: [{ text: `The CEO requested: "${epic.task_payload}". Create an Epic task for the Scrum Master.` }] }
-      ],
-      config: {
-        systemInstruction: JARVIS_SYSTEM_PROMPT,
+    const response = await callGemini(
+      `The CEO requested: "${epic.task_payload}". Create an Epic task for the Scrum Master.`,
+      JARVIS_SYSTEM_PROMPT,
+      {
         tools: [{ functionDeclarations: [createAgentTaskTool] }],
         temperature: 0.2,
+        forceToolUse: true,
       }
-    });
+    );
 
     if (response.functionCalls && response.functionCalls.length > 0) {
       for (const call of response.functionCalls) {
@@ -103,8 +99,12 @@ export async function runJarvis() {
       console.log("Jarvis didn't think this required Scrum Master attention.");
       await supabase.from('AgentTask').update({ status: 'NEEDS_REVIEW', output_data: { response: response.text } }).eq('id', epic.id);
     }
-  } catch (error) {
+  } catch (error: any) {
     console.error("Jarvis failed:", error);
+    try {
+      const { data: stuck } = await supabase.from('AgentTask').select('id').eq('agent_id', 'jarvis').eq('status', 'IN_PROGRESS').limit(1);
+      if (stuck?.[0]) await supabase.from('AgentTask').update({ status: 'FAILED', output_data: { error: error.message || String(error) } }).eq('id', stuck[0].id);
+    } catch (_) {}
   }
 }
 

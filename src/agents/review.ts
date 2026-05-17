@@ -1,8 +1,6 @@
-import { GoogleGenAI } from '@google/genai';
+import { callGemini } from '../utils/gemini';
 import { supabase } from '../utils/supabase';
 import "dotenv/config";
-
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 const REVIEW_PROMPT = `You are the Review Agent. Evaluate all previous outputs and give a final APPROVED or REJECTED verdict.`;
 
@@ -28,34 +26,24 @@ export async function runReviewAgent() {
 
     await supabase.from('AgentTask').update({ status: 'IN_PROGRESS' }).eq('id', task.id);
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: [{ role: 'user', parts: [{ text: `Execute this task: ${task.task_payload}` }] }],
-      config: { systemInstruction: REVIEW_PROMPT, temperature: 0.3 }
-    });
+    const response = await callGemini(
+      `Execute this task: ${task.task_payload}`,
+      REVIEW_PROMPT
+    );
 
     await supabase.from('AgentTask').update({ 
-      status: 'COMPLETED', 
+      status: 'NEEDS_REVIEW', 
       output_data: { result: response.text } 
     }).eq('id', task.id);
     
-    console.log(`[REVIEW] finished work!`);
+    console.log(`[REVIEW] finished work and requested human approval!`);
 
-    const { data: dependentTasks } = await supabase
-      .from('AgentTask')
-      .select('*')
-      .eq('depends_on_task_id', task.id)
-      .eq('status', 'BLOCKED');
-
-    if (dependentTasks && dependentTasks.length > 0) {
-      for (const depTask of dependentTasks) {
-        console.log(`Unblocking dependent task [${depTask.agent_id}]: ${depTask.id}`);
-        await supabase.from('AgentTask').update({ status: 'PENDING' }).eq('id', depTask.id);
-      }
-    }
-
-  } catch (error) {
+  } catch (error: any) {
     console.error(`Error running review:`, error);
+    try {
+      const { data: stuck } = await supabase.from('AgentTask').select('id').eq('agent_id', 'review').eq('status', 'IN_PROGRESS').limit(1);
+      if (stuck?.[0]) await supabase.from('AgentTask').update({ status: 'FAILED', output_data: { error: error.message || String(error) } }).eq('id', stuck[0].id);
+    } catch (_) {}
   }
 }
 

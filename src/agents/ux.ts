@@ -1,8 +1,7 @@
-import { GoogleGenAI, Type } from '@google/genai';
+import { Type } from '@google/genai';
+import { callGemini } from '../utils/gemini';
 import { supabase } from '../utils/supabase';
 import "dotenv/config";
-
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 const UX_PROMPT = `You are the UX Design Agent. Create a wireframe layout description and CSS/Tailwind recommendations based on the payload.`;
 
@@ -45,15 +44,14 @@ export async function runUxAgent() {
       promptText += `\n\nPreviously you asked for help. Here is the resolution: ${task.human_feedback}`;
     }
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: [{ role: 'user', parts: [{ text: promptText }] }],
-      config: { 
-        systemInstruction: UX_PROMPT, 
+    const response = await callGemini(
+      promptText,
+      UX_PROMPT,
+      {
+        tools: [{ functionDeclarations: [askForHelpTool] }],
         temperature: 0.3,
-        tools: [{ functionDeclarations: [askForHelpTool] }]
       }
-    });
+    );
 
     if (response.functionCalls && response.functionCalls.length > 0) {
       const call = response.functionCalls[0];
@@ -90,8 +88,12 @@ export async function runUxAgent() {
       }
     }
 
-  } catch (error) {
+  } catch (error: any) {
     console.error(`Error running ux:`, error);
+    try {
+      const { data: stuck } = await supabase.from('AgentTask').select('id').eq('agent_id', 'ux').eq('status', 'IN_PROGRESS').limit(1);
+      if (stuck?.[0]) await supabase.from('AgentTask').update({ status: 'FAILED', output_data: { error: error.message || String(error) } }).eq('id', stuck[0].id);
+    } catch (_) {}
   }
 }
 
