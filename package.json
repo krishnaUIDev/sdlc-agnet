@@ -6,9 +6,18 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "supabase:login": "npx supabase login",
+    "supabase:link": "npx supabase link",
+    "supabase:push": "npx supabase db push",
+    "supabase:gen-types": "npx supabase gen types typescript --linked > src/utils/supabase-types.ts",
+    "jarvis": "npx tsx src/agents/jarvis.ts",
+    "seo": "npx tsx src/agents/seo.ts"
   },
   "dependencies": {
+    "@google/genai": "^2.3.0",
+    "@supabase/supabase-js": "^2.105.4",
+    "dotenv": "^17.4.2",
     "next": "16.2.6",
     "react": "19.2.4",
     "react-dom": "19.2.4"
@@ -16,11 +25,13 @@
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
+    "@types/pg": "^8.20.0",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.2.6",
     "tailwindcss": "^4",
+    "tsx": "^4.22.1",
     "typescript": "^5"
   }
 }

@@ -1,0 +1,48 @@
+graph TD
+    classDef default fill:#1e1e1e,stroke:#333,stroke-width:1px,color:#fff;
+    classDef dashboard fill:#444,stroke:#666,color:#fff,rx:8px,ry:8px;
+    classDef orchestrator fill:#4b3b8c,stroke:#5c4b9e,color:#fff,rx:8px,ry:8px;
+    classDef worker fill:#1c5e46,stroke:#24785a,color:#fff,rx:8px,ry:8px;
+    classDef deliverable fill:#82531e,stroke:#996426,color:#fff,rx:8px,ry:8px;
+    classDef review fill:#8c3a26,stroke:#a3442d,color:#fff,rx:8px,ry:8px;
+    classDef human fill:#444,stroke:#666,color:#fff,rx:8px,ry:8px;
+    classDef auto fill:#2e5917,stroke:#3b731e,color:#fff,rx:8px,ry:8px;
+
+    DB["Shared Dashboard (polls every 15 min)<br/>Tasks • Status • Goals • Revenue metrics"]:::dashboard
+
+    Jarvis["Jarvis — Orchestrator<br/>Delegates tasks • aligns to revenue goals"]:::orchestrator
+    
+    DB --> Jarvis
+
+    SEO["SEO Agent<br/>Keywords • content briefs • backlinks"]:::worker
+    Social["Social Agent<br/>Posts • threads scheduling • tone"]:::worker
+    Product["Product Agent<br/>UX • analytics conversion leaks"]:::worker
+    Dev["Dev Agent<br/>Implements specs code • deploy"]:::worker
+
+    Jarvis --> SEO
+    Jarvis --> Social
+    Jarvis --> Product
+    Jarvis --> Dev
+
+    SEOBrief["SEO brief<br/>Ready-to-publish"]:::deliverable
+    PostDrafts["Post drafts<br/>Scheduled queue"]:::deliverable
+    ImprovementSpec["Improvement spec<br/>Production-ready"]:::deliverable
+    PRDeploy["PR / deploy<br/>Staged changes"]:::deliverable
+
+    SEO --> SEOBrief
+    Social --> PostDrafts
+    Product --> ImprovementSpec
+    Dev --> PRDeploy
+
+    Review["Review Agent<br/>Quality gate • no premature publishing"]:::review
+
+    SEOBrief --> Review
+    PostDrafts --> Review
+    ImprovementSpec --> Review
+    PRDeploy --> Review
+
+    Human["Human review<br/>Flagged or high-risk items"]:::human
+    AutoPublish["Auto-publish<br/>Approved low-risk items"]:::auto
+
+    Review --> Human
+    Review --> AutoPublish
