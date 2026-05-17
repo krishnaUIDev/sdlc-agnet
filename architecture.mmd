@@ -1,3 +1,4 @@
+```mermaid
 graph TD
     classDef default fill:#1e1e1e,stroke:#333,stroke-width:1px,color:#fff;
     classDef human fill:#444,stroke:#666,color:#fff,rx:8px,ry:8px;
@@ -11,7 +12,7 @@ graph TD
 
     User["User / Human<br/>Sets Goal"]:::human
     
-    DB[("Supabase DB + Realtime (Pub/Sub)<br/>State: PENDING → ASSIGNED → IN_PROGRESS → COMPLETED/REJECTED")]:::db
+    DB[("Supabase DB + Realtime - Pub/Sub<br/>State: PENDING → ASSIGNED → IN_PROGRESS → COMPLETED/REJECTED")]:::db
 
     Watcher["SLA / Timeout Monitor<br/>Flags stuck tasks"]:::monitor
 
@@ -24,11 +25,11 @@ graph TD
     Security["Security Agent"]:::worker
     QA["QA / Testing Agent"]:::worker
 
-    HelpAgent["Help / Resolution Agent<br/>(Unblocks stuck agents)"]:::manager
-    Review["Review Agent<br/>(Quality Gate)"]:::review
+    HelpAgent["Help / Resolution Agent<br/>Unblocks stuck agents"]:::manager
+    Review["Review Agent<br/>Quality Gate"]:::review
     DevOps["DevOps Agent"]:::devops
     Finished["Deployed Application"]:::human
-    Rollback["Previous Version<br/>(Rollback Target)"]:::human
+    Rollback["Previous Version<br/>Rollback Target"]:::human
 
     %% Communication Flow: Event Bus / Pub/Sub
     User -->|1. Creates Epic| DB
@@ -63,10 +64,11 @@ graph TD
     HelpAgent -->|Provides Answer, resets to PENDING| DB
 
     DB -.->|Event: Tasks COMPLETED| Review
-    Review -->|"Approves"| DB
-    Review -->|"REJECTS (Sets status REJECTED)"| DB
-    DB -.->|Event: REJECTED (Reassigns)| Dev
+    Review -->|Approves| DB
+    Review -->|REJECTS - Sets status| DB
+    DB -.->|Event: REJECTED - Reassigns| Dev
 
     DB -.->|Event: APPROVED| DevOps
-    DevOps -->|"Merges & Deploys"| Finished
-    DevOps -.->|"Fails Deployment"| Rollback
+    DevOps -->|Merges and Deploys| Finished
+    DevOps -.->|Fails Deployment| Rollback
+```
